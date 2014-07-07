@@ -108,6 +108,7 @@ def expand_cluster(line1, reachable, current_corridor):
                 print "not yet visited l2", line2.name, "called from", line1.name
                 line2.visited=True
                 sumweight_line2 = 0.
+                new_reachable = []
                 for angle in traj_angles:
                     if abs(angle-line2.angle) > max_angle:
                         continue
@@ -115,9 +116,12 @@ def expand_cluster(line1, reachable, current_corridor):
                         
                         if segments_distance(line2.startx, line2.starty, line2.endx, line2.endy, line3.startx, line3.starty, line3.endx, line3.endy) <= max_dist:
                             sumweight_line2 = sumweight_line2 + line3.weight
-                            if line3.visited == False:
-                                print "considering", line3.name
-                                new_candidates.append(line3)
+                            new_reachable.append(line)
+                if sumweight_line2 >= min_density:
+                    for line3 in new_reachable:
+                        if line3.visited == False:
+                            print "considering", line3.name
+                            new_candidates.append(line3)
             if line2.corridor < 0:
                 line2.corridor = current_corridor
                 corridors[current_corridor].append(line2)
@@ -170,17 +174,44 @@ for corridor in range(0, len(corridors)):
             maxx_rotated_end = endx_rotated
 
 
-def DBScan_bylist(xs, ys, angles, weights, minw, max_angle):
-    """ Take as input lists of x coordinates, y coordinates, angles and weights of points to be clustered, values should be set to None for those that are not to be included
+def DBScan_bylist(x, ys, angles, weights, maxd, minw, max_angle):
+    """ Take as input a common x coordinate, and lists y coordinates, angles and weights of points to be clustered, values should be set to None for those that are not to be included
     output is list of cluster ids, starting from 0, with -1 for not belonging to a cluster (either input was None or the point was not in region satisfying density requirement"""
     clus = 0
-    
+    visited = [False] * len(ys)
+    assignments = [-2] * len(ys)
+    for point_index in range(0, len(ys), 1):
+        visited[point_index] = True
+        if visited[point_index] or ys[point_index] == None:
+            continue
+        clus_list = []
+        sumw = 0.
+        for point_index2 in range(0, len(ys), 1):
+            
+            if abs(ys[point_index] - ys[point_index2]) < maxd and abs(angles[point_index] - angles[point_index2]) < max_angle:
+                sumw = sumw + weights[point_index2]
+                clus_list.append(point_index2)
+        if sumw > minw:
+            expand_dense_bylist(ys, angles, weights, maxd, minw, max_angle, point_index, visited, reachable, clus) 
+            clus = clus + 1
+        else :
+            assignments[point_index] = -1
 
+def expand_dense_bylist(ys, angles, weights, maxd, minw, max_angle, point_index, visited, reachable, clus, assignments):
+    """ """
+    assignments[point_index] = clus
+    while len(reachable) > 0:
+        new_candidates = []
+        for point_index2 in reachable:
+            if visited[point_index2] == False:
+                visited[point_index2] = True
+                for point_index3 in range(0, len(ys), 1):
+                    if ys[point_index3] == None:
+                        continue
+                    if abs(ys[point_index3] - ys[point_index2]) < maxd and abs(angles[point_index3] - angles[point_index2]) < max_angle:
+                        
+                        
 
-
-
-
-    
 
 
 
