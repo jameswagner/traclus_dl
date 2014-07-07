@@ -68,7 +68,7 @@ def point_segment_distance(px, py, x1, y1, x2, y2):
     dy = py - near_y
 
   return math.hypot(dx, dy)
-
+corridors = []
 def DBScan(line1, traj_angles, current_corridor):
     if line1.visited == True or line1.corridor>=0:
         return current_corridor
@@ -97,6 +97,9 @@ def DBScan(line1, traj_angles, current_corridor):
 
 def expand_cluster(line1, reachable, current_corridor):
     line1.corridor = current_corridor
+    while len(corridors) < current_corridor + 1:
+        corridors.append([])
+    corridors[current_corridor].append(line1)
     while len(reachable) > 0:
         new_candidates = []
         for line2 in reachable:
@@ -117,6 +120,7 @@ def expand_cluster(line1, reachable, current_corridor):
                                 new_candidates.append(line3)
             if line2.corridor < 0:
                 line2.corridor = current_corridor
+                corridors[current_corridor].append(line2)
         reachable = new_candidates
 
 
@@ -145,8 +149,13 @@ current_corridor=0
 for line in trajectories:
     current_corridor = DBScan(line, traj_angles,current_corridor)
 
+
+
+
+
 for line in trajectories:
     print line.corridor
+
 
 
 
