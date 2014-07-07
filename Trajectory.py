@@ -22,6 +22,7 @@ class Trajectory:
             self.slope = float('inf')
         else:
             self.slope = (endy - starty) / (endx - startx)
+        self.rotated_slope = self.slope
         print self.angle, self.length
 
     def simple_partition(segment_length=100., ):
@@ -51,6 +52,10 @@ class Trajectory:
         self.endx_rotated = newx
         self.endy_rotated = newy
         self.rotated_angle = theta
+        if newx - startx == 0:
+            self.rotated_slope = float('inf')
+        else:
+            self.rotated_slope = (newy - starty) / (newx - startx)        
 
 
 

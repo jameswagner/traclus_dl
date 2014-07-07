@@ -2,7 +2,7 @@ from Trajectory import *
 import sys
 from collections import defaultdict
 
-
+step_size = 1.0
 def round_to(n, precision):
     correction = 0.5 if n >= 0 else -0.5
     return int(n/precision+correction)*precision
@@ -163,7 +163,11 @@ for corridor in range(0, len(corridors)):
         sum_weight = sum_weight + line.weight
         if minx_start > line.startx:
             minx_start = line.startx
-    rot_angle = 
+    rot_angle = w_sumangle / sum_weight
+    for line in corridors[corridor]:
+        line.rotate(rot_angle)
+        if maxx_rotated_end <  endx_rotated:
+            maxx_rotated_end = endx_rotated
 
 
 
