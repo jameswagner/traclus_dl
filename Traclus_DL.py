@@ -170,7 +170,11 @@ for corridor in range(0, len(corridors)):
             maxx_rotated_end = endx_rotated
 
 
-
+def DBScan_bylist(xs, ys, angles, weights, minw, max_angle):
+    """ Take as input lists of x coordinates, y coordinates, angles and weights of points to be clustered, values should be set to None for those that are not to be included
+    output is list of cluster ids, starting from 0, with -1 for not belonging to a cluster (either input was None or the point was not in region satisfying density requirement"""
+    clus = 0
+    
 
 
 

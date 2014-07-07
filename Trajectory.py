@@ -34,12 +34,19 @@ class Trajectory:
 
 
     def getY(X):
+        if X < self.startx or X > self.endx:
+            return None
         if self.slope == float('inf'):
             return self.starty
         return (X-self.startx)*self.slope + self.starty
 
         
-
+    def getY_rotated(X):
+        if X < self.startx or X > self.endx_rotated:
+            return None
+        if self.rotated_slope == float('inf'):
+            return self.starty
+        return (X-self.startx)*self.rotated_slope + self.starty
 
 
     def rotate(self,theta=0.):
