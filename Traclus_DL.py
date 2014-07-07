@@ -153,8 +153,17 @@ for line in trajectories:
 
 
 
-for line in trajectories:
-    print line.corridor
+for corridor in range(0, len(corridors)):
+    w_sumangle = 0.
+    sum_weight = 0.
+    minx_start = sys.float_info.max
+    maxx_rotated_end = sys.float_info.min
+    for line in corridors[corridor]:
+        w_sumangle = w_sumangle + line.angle * line.weight
+        sum_weight = sum_weight + line.weight
+        if minx_start > line.startx:
+            minx_start = line.startx
+    rot_angle = 
 
 
 

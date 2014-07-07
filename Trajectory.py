@@ -9,11 +9,15 @@ class Trajectory:
         self.starty = starty
         self.endx = endx
         self.endy = endy
+        self.endx_rotated = endx
+        self.endy_rotated = endy
+        self.rotated_angle = 0
         self.angle = arctan2(endy-starty, endx-startx) * 180 / math.pi
         self.length = hypot(endy-starty, endx-startx)
         self.corridor = -1
         self.visited = False 
         self.slope = 0
+        
         if endx - startx == 0:
             self.slope = float('inf')
         else:
@@ -38,15 +42,20 @@ class Trajectory:
 
 
     def rotate(self,theta=0.):
-#        xChange = self.length*cos(angle/180*math.pi)
-#        yChange = self.length*sin(angle/180*math.pi)
+        if abs(self.angle + theta) == 90: #avoid exactly vertical lines
+            theta += 0.1
+        
 
         newx = self.endx*cos(theta/180*math.pi) - self.endy*sin(theta/180.0*math.pi)
         newy = self.endx*sin(theta/180*math.pi) + self.endy*cos(theta/180.0*math.pi)
+        self.endx_rotated = newx
+        self.endy_rotated = newy
+        self.rotated_angle = theta
 
-        print self.startx, self.starty, self.endx, self.endy, newx, newy
 
 
-traj = Trajectory("", 1, 0, 0, 0, 1)
-traj.rotate(-45.0)
+
+
+
+
         
