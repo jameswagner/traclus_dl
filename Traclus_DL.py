@@ -1,7 +1,7 @@
 from Trajectory import *
 import sys
 from collections import defaultdict
-
+from numpy import arange
 step_size = 1.0
 def round_to(n, precision):
     correction = 0.5 if n >= 0 else -0.5
@@ -126,6 +126,124 @@ def expand_cluster(line1, reachable, current_corridor):
                 corridors[current_corridor].append(line2)
         reachable = new_candidates
 
+def rotate_and_print_tuples(xy_tuples, theta):
+    if len(xy_tuples) < 2:
+        print xy_tuples
+        return
+    xstart = xy_tuples[0][0]
+    ystart = xy_tuples[0][1]
+    string = str(xy_tuples[0])
+    
+    for index in range(1, len(xy_tuples)):
+        xend = xy_tuples[index][0]
+        yend = xy_tuples[index][1]
+        xdiff = xend - xstart
+        ydiff = yend - ystart
+        newx = xdiff*cos(theta/180*math.pi) - ydiff*sin(theta/180.0*math.pi) + xstart
+        newy = xdiff*sin(theta/180*math.pi) + ydiff*cos(theta/180.0*math.pi) + ystart
+        string = string + str((newx, newy))
+    print string
+
+
+def  map_best(ys, last_assignments, assignments):
+    num_old_assign = max(last_assignments) + 1
+    num_new_assign = max(assignmnets) + 1
+    
+    distances = [[0]*num_old_assign] * num_new_assign
+    y_olds = get_weighted_averages(ys, weights, last_assignments)
+    y_news = get_weighted_averages(ys, weights, assignments)
+    for index1 in range(0, num_new_assign, 1):
+        for index2 in range(0, num_old_assign, 1):
+            distances[index1][index2] = abs(y_olds[index2] - y_news[index1])
+    
+    mappings = {}
+    for counter in range(0, min(num_old_assign, num_new_assign)):
+        smallestd = 1e9
+        smallest_new = -1
+        smallest_old = -1
+        for index1 in range(0, num_new_assign, 1):
+            for index2 in range(0, num_old_assign, 1):
+                if distances[index1][index2] < smallestd:
+                    smallestd = distances[index1][index2]
+                    smallest_new = index1
+                    smallest_old = index2
+        mappings[smallest_old] = smallest_new
+        for index1 in range(0, num_new_assign):
+            distances[index1][smallest_old] = 1e10
+    return mappings
+
+
+def get_weighted_averages(ys, weights, assignments):
+    print "get_weighted", ys, weights, assignments
+    ysums = [0.0] * (max(assignments)+1)
+    ycounts = [0] * (max(assignments)+1)
+    for index in range(0, len(ys), 1):
+        if assignments[index] < 0:
+            continue
+        ysums[assignments[index]] = ysums[assignments[index]] +  ys[index] * weights[index]
+        ycounts[assignments[index]] = ycounts[assignments[index]] + weights[index]
+    for index in range(0, len(ysums), 1):
+        ysums[index] = ysums[index]  / ycounts[index]
+    return ysums
+
+
+def expand_dense_bylist(ys, angles, weights, maxd, minw, max_angle, point_index, visited, reachable, clus, assignments):
+    """ """
+    print "visited", visited
+    print "reachable", reachable
+    print "ys", ys, "angles", angles
+    assignments[point_index] = clus
+    while len(reachable) > 0:
+        next_reachable = []        
+        for point_index2 in reachable:
+            candidate_reachable = []
+            sumw = 0.
+            if visited[point_index2] == False:
+                visited[point_index2] = True
+                for point_index3 in range(0, len(ys), 1):
+                    if ys[point_index3] == None:
+                        continue
+                    if abs(ys[point_index3] - ys[point_index2]) < maxd and abs(angles[point_index3] - angles[point_index2]) < max_angle:
+                        sumw = sumw + weights[point_index3]
+                        if not visited[point_index3]:
+                            candidate_reachable.append(point_index3)
+                if sumw >= minw:
+                    next_reachable.extend(candidate_reachable)
+            if assignments[point_index2] < 0:
+                assignments[point_index2] = clus
+        reachable = next_reachable
+
+def DBScan_bylist(x, ys, angles, weights, maxd, minw, max_angle):
+    """ Take as input a common x coordinate, and lists y coordinates, angles and weights of points to be clustered, values should be set to None for those that are not to be included
+    output is list of cluster ids, starting from 0, with -1 for not belonging to a cluster (either input was None or the point was not in region satisfying density requirement"""
+    print "by_list", x, ys, angles, weights, maxd, minw, max_angle
+    clus = 0
+    visited = [False] * len(ys)
+    assignments = [-2] * len(ys)
+
+    for point_index in range(0, len(ys), 1):
+
+        if visited[point_index] or ys[point_index] == None:
+            continue
+        visited[point_index] = True
+        reachable = []
+        sumw = 0.
+        for point_index2 in range(0, len(ys), 1):
+            print "comparing point to point", point_index, point_index2, ys[point_index], ys[point_index2];
+            if abs(ys[point_index] - ys[point_index2]) < maxd and abs(angles[point_index] - angles[point_index2]) < max_angle:
+                sumw = sumw + weights[point_index2]
+                reachable.append(point_index2)
+        if sumw > minw:
+            expand_dense_bylist(ys, angles, weights, maxd, minw, max_angle, point_index, visited, reachable, clus, assignments) 
+            clus = clus + 1
+        else :
+            assignments[point_index] = -1
+    print "sub clustering", x, assignments
+    return assignments
+
+
+
+
 
 
 
@@ -175,20 +293,23 @@ for corridor in range(0, len(corridors)):
             minx_start = line.startx
     rot_angle = w_sumangle / sum_weight
     for line in corridors[corridor]:
-        line.rotate(rot_angle)
-        if maxx_rotated_end <  endx_rotated:
-            maxx_rotated_end = endx_rotated
-    for x in range(minx_start, maxx_rotated+step_size, step_size ):
+        line.rotate(-rot_angle)
+        if maxx_rotated_end <  line.endx_rotated:
+            maxx_rotated_end = line.endx_rotated
+    for x in arange(minx_start, maxx_rotated_end, step_size ):
+        print "arange", x, minx_start, maxx_rotated_end, step_size
         ys = []
         for line in corridors[corridor]:
-            ys.append(line.getY_rotated)
+            ys.append(line.getY_rotated(x))
+        print "ys", ys
         assignments = DBScan_bylist(x, ys, angles, weights, max_dist, min_density, max_angle)
+        print "Assigned!", assignments
         if assignments != last_assignments:
-            yaves  = get_weighted_averages(corridors[corridor], assignments)
+            yaves  = get_weighted_averages(ys, weights, assignments)
             if first:
 
-                for idx, val in enumerate(xaves):
-                    line_stack[idx] = []
+                for idx, val in enumerate(yaves):
+                    line_stack.append([])
                     line_stack[idx].append((x, yaves[idx]))
             else:
                 best_mapped = map_best(ys, last_assignments, assignments)
@@ -197,7 +318,7 @@ for corridor in range(0, len(corridors)):
                 new_assignment_mapped = {}
                 for old_sub_corr in best_mapped.keys:
                     if old_sub_corr not in best_mapped:
-                        rotate_and_print_tuples(line_stack[old_sub_corr], -rot_angle)
+                        rotate_and_print_tuples(line_stack[old_sub_corr], rot_angle)
                         continue
                     new_sub_corr = best_mapped[old_sub_corr]
                     temp_stack[new_sub_corr] = line_stack[old_sub_corr]
@@ -208,113 +329,15 @@ for corridor in range(0, len(corridors)):
                         temp_stack[new_sub_corr] = []
                         temp_stack[new_sub_corr].append(x, yaves[new_sub_corr])
                 line_stack = temp_stack
-        elif x + step_size > maxx_rotated: #last one
-            xaves, yaves  = get_weighted_averages(ys, weights, assignments)
-            for idx, val in enumerate(xaves):
+            last_assignments = assignments
+        elif x + step_size > maxx_rotated_end: #last one
+     
+            yaves  = get_weighted_averages(ys, weights, assignments)
+            for idx, val in enumerate(yaves):
                 line_stack[idx].append((x, yaves[idx]))
                 rotate_and_print_tuples(line_stack[idx], rot_angle)
 
 
-
-
-def rotate_and_print_tuples(xy_tuples, rot_angle):
-    if len(xy_tuples) < 2:
-        print xy_tuples
-        return
-    xstart = xy_tuples[0][0]
-    ystart = xy_tuples[0][1]
-    string = str(xy_tuples[0])
-    for index in range(1, len(xy_tuples)):
-        newx = self.endx*cos(theta/180*math.pi) - self.endy*sin(theta/180.0*math.pi)
-        newy = self.endx*sin(theta/180*math.pi) + self.endy*cos(theta/180.0*math.pi)
-
-
-def  map_best(ys, last_assignments, assignments):
-    num_old_assign = max(last_assignments) + 1
-    num_new_assign = max(assignmnets) + 1
-    
-    distances = [[0]*num_old_assign] * num_new_assign
-    y_olds = get_weighted_averages(ys, weights, last_assignments)
-    y_news = get_weighted_averages(ys, weights, assignments)
-    for index1 in range(0, num_new_assign, 1):
-        for index2 in range(0, num_old_assign, 1):
-            distances[index1][index2] = abs(y_olds[index2] - y_news[index1])
-    
-    mappings = {}
-    for counter in range(0, min(num_old_assign, num_new_assign)):
-        smallestd = 1e9
-        smallest_new = -1
-        smallest_old = -1
-        for index1 in range(0, num_new_assign, 1):
-            for index2 in range(0, num_old_assign, 1):
-                if distances[index1][index2] < smallestd:
-                    smallestd = distances[index1][index2]
-                    smallest_new = index1
-                    smallest_old = index2
-        mappings[smallest_old] = smallest_new
-        for index1 in range(0, num_new_assign):
-            distances[index1][smallest_old] = 1e10
-    return mappings
-
-
-def get_weighted_averages(ys, weights, assignments):
-    ysums = [0.0] * (max[assignments]+1)
-    ycounts = [0] * (max[assignments]+1)
-    for index in range(0, len(ys), 1):
-        ysums[assignments[index]] = ysums[assignments[index]] +  ys[index] * weights[index]
-        ycounts[assignments[index]] = ycounts[assignments[index]] + weights[index]
-    for index in range(0, len(ysums), 1):
-        ysums[index] = ysums[index]  / ycounts[index]
-    return ysums
-
-
-def DBScan_bylist(x, ys, angles, weights, maxd, minw, max_angle):
-    """ Take as input a common x coordinate, and lists y coordinates, angles and weights of points to be clustered, values should be set to None for those that are not to be included
-    output is list of cluster ids, starting from 0, with -1 for not belonging to a cluster (either input was None or the point was not in region satisfying density requirement"""
-    clus = 0
-    visited = [False] * len(ys)
-    assignments = [-2] * len(ys)
-
-    for point_index in range(0, len(ys), 1):
-        visited[point_index] = True
-        if visited[point_index] or ys[point_index] == None:
-            continue
-        clus_list = []
-        sumw = 0.
-        for point_index2 in range(0, len(ys), 1):
-            
-            if abs(ys[point_index] - ys[point_index2]) < maxd and abs(angles[point_index] - angles[point_index2]) < max_angle:
-                sumw = sumw + weights[point_index2]
-                clus_list.append(point_index2)
-        if sumw > minw:
-            expand_dense_bylist(ys, angles, weights, maxd, minw, max_angle, point_index, visited, reachable, clus) 
-            clus = clus + 1
-        else :
-            assignments[point_index] = -1
-    return assignments
-
-
-def expand_dense_bylist(ys, angles, weights, maxd, minw, max_angle, point_index, visited, reachable, clus, assignments):
-    """ """
-    assignments[point_index] = clus
-    while len(reachable) > 0:
-        
-        for point_index2 in reachable:
-            candidate_reachable = []
-            sumw = 0.
-            if visited[point_index2] == False:
-                visited[point_index2] = True
-                for point_index3 in range(0, len(ys), 1):
-                    if ys[point_index3] == None:
-                        continue
-                    if abs(ys[point_index3] - ys[point_index2]) < maxd and abs(angles[point_index3] - angles[point_index2]) < max_angle:
-                        sumw = sumw + weights[point_index3]
-                        if not visited[point_index3]:
-                            candidate_reachable.append(point_index3)
-                if sumw >= minw:
-                    reachable.extend(candidate_reachable)
-            if assignments[point_index] < 0:
-                assignments[point_index] = clus
 
 
 
