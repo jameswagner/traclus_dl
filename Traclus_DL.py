@@ -86,7 +86,7 @@ def DBScan(line1, traj_angles, current_corridor):
                 reachable.append(line2)
                 sumweight = sumweight + line2.weight
                 
-    print reachable, sumweight            
+    #print reachable, sumweight            
     if sumweight < min_density:
         line1.corridor = -1
         return current_corridor
@@ -105,7 +105,7 @@ def expand_cluster(line1, reachable, current_corridor):
         for line2 in reachable:
             
             if line2.visited==False:
-                print "not yet visited l2", line2.name, "called from", line1.name
+                #print "not yet visited l2", line2.name, "called from", line1.name
                 line2.visited=True
                 sumweight_line2 = 0.
                 new_reachable = []
@@ -174,7 +174,7 @@ def  map_best(ys, last_assignments, assignments):
 
 
 def get_weighted_averages(ys, weights, assignments):
-    print "get_weighted", ys, weights, assignments
+    #print "get_weighted", ys, weights, assignments
     ysums = [0.0] * (max(assignments)+1)
     ycounts = [0] * (max(assignments)+1)
     for index in range(0, len(ys), 1):
@@ -189,9 +189,9 @@ def get_weighted_averages(ys, weights, assignments):
 
 def expand_dense_bylist(ys, angles, weights, maxd, minw, max_angle, point_index, visited, reachable, clus, assignments):
     """ """
-    print "visited", visited
-    print "reachable", reachable
-    print "ys", ys, "angles", angles
+    #print "visited", visited
+    #print "reachable", reachable
+    #print "ys", ys, "angles", angles
     assignments[point_index] = clus
     while len(reachable) > 0:
         next_reachable = []        
@@ -216,7 +216,7 @@ def expand_dense_bylist(ys, angles, weights, maxd, minw, max_angle, point_index,
 def DBScan_bylist(x, ys, angles, weights, maxd, minw, max_angle):
     """ Take as input a common x coordinate, and lists y coordinates, angles and weights of points to be clustered, values should be set to None for those that are not to be included
     output is list of cluster ids, starting from 0, with -1 for not belonging to a cluster (either input was None or the point was not in region satisfying density requirement"""
-    print "by_list", x, ys, angles, weights, maxd, minw, max_angle
+    #print "by_list", x, ys, angles, weights, maxd, minw, max_angle
     clus = 0
     visited = [False] * len(ys)
     assignments = [-2] * len(ys)
@@ -229,7 +229,7 @@ def DBScan_bylist(x, ys, angles, weights, maxd, minw, max_angle):
         reachable = []
         sumw = 0.
         for point_index2 in range(0, len(ys), 1):
-            print "comparing point to point", point_index, point_index2, ys[point_index], ys[point_index2];
+     #       print "comparing point to point", point_index, point_index2, ys[point_index], ys[point_index2];
             if abs(ys[point_index] - ys[point_index2]) < maxd and abs(angles[point_index] - angles[point_index2]) < max_angle:
                 sumw = sumw + weights[point_index2]
                 reachable.append(point_index2)
@@ -238,7 +238,7 @@ def DBScan_bylist(x, ys, angles, weights, maxd, minw, max_angle):
             clus = clus + 1
         else :
             assignments[point_index] = -1
-    print "sub clustering", x, assignments
+    #print "sub clustering", x, assignments
     return assignments
 
 
@@ -269,7 +269,7 @@ for line in fh:
 current_corridor=0
 for line in trajectories:
     current_corridor = DBScan(line, traj_angles,current_corridor)
-
+    print line.name, line.corridor
 
 
 
@@ -297,13 +297,13 @@ for corridor in range(0, len(corridors)):
         if maxx_rotated_end <  line.endx_rotated:
             maxx_rotated_end = line.endx_rotated
     for x in arange(minx_start, maxx_rotated_end, step_size ):
-        print "arange", x, minx_start, maxx_rotated_end, step_size
+        #print "arange", x, minx_start, maxx_rotated_end, step_size
         ys = []
         for line in corridors[corridor]:
             ys.append(line.getY_rotated(x))
-        print "ys", ys
+        #print "ys", ys
         assignments = DBScan_bylist(x, ys, angles, weights, max_dist, min_density, max_angle)
-        print "Assigned!", assignments
+        #print "Assigned!", assignments
         if assignments != last_assignments:
             yaves  = get_weighted_averages(ys, weights, assignments)
             if first:

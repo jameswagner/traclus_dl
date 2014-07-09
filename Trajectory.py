@@ -23,7 +23,7 @@ class Trajectory:
             self.slope = float('inf')
         else:
             self.slope = (endy - starty) / (endx - startx)
-        print self.angle, self.slope, tan(self.angle/180*math.pi)
+       # print self.angle, self.slope, tan(self.angle/180*math.pi)
         self.rotated_slope = self.slope
         #print self.angle, self.length
 
@@ -56,7 +56,7 @@ class Trajectory:
         if abs(self.rotated_angle + theta) == 90: #avoid exactly vertical lines
             theta += 0.1
         
-        print theta, theta/180*math.pi
+#        print theta, theta/180*math.pi
 
         xdiff = self.endx - self.startx
         ydiff = self.endy - self.starty
@@ -66,7 +66,7 @@ class Trajectory:
         newy = xdiff*sin(theta/180*math.pi) + ydiff*cos(theta/180.0*math.pi) + self.starty
         self.endx_rotated = newx
         self.endy_rotated = newy
-        print "called", self.startx, self.starty, self.endx, self.endy, newx, newy
+        
         self.rotated_angle = self.rotated_angle + theta
         
         if newx - self.startx == 0:
@@ -77,8 +77,8 @@ class Trajectory:
 
 
 
-X = Trajectory(startx=1, starty=1, endx=2, endy=2)
-X.rotate(-45)
-print(X.endx_rotated, X.endy_rotated, X.angle, X.rotated_angle, X.rotated_slope, tan(X.rotated_angle*math.pi/180))
+#X = Trajectory(startx=1, starty=1, endx=2, endy=2)
+#X.rotate(-45)
+#print(X.endx_rotated, X.endy_rotated, X.angle, X.rotated_angle, X.rotated_slope, tan(X.rotated_angle*math.pi/180))
 
         
