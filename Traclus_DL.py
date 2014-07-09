@@ -70,14 +70,14 @@ def point_segment_distance(px, py, x1, y1, x2, y2):
   return math.hypot(dx, dy)
 corridors = []
 def DBScan(line1, traj_angles, current_corridor):
-    if line1.visited == True or line1.corridor>=0:
+    if line1.visited == True or line1.corridor >= 0:
         return current_corridor
     reachable = []
     line1.visited = True
     sumweight = 0.0
     for angle in traj_angles:
 
-        if abs(angle-line1.angle) > max_angle:
+        if abs(angle - line1.angle) > max_angle:
             continue
 
         for line2 in traj_angles[angle]:
@@ -88,7 +88,7 @@ def DBScan(line1, traj_angles, current_corridor):
                 
     #print reachable, sumweight            
     if sumweight < min_density:
-        line1.corridor = -1
+        line1.corridor = -1 #did not reach minimum density, assign line1 to noise cluster
         return current_corridor
     else:
         expand_cluster(line1, reachable, current_corridor)
@@ -96,19 +96,19 @@ def DBScan(line1, traj_angles, current_corridor):
         return current_corridor
 
 def expand_cluster(line1, reachable, current_corridor):
-    line1.corridor = current_corridor
+    line1.corridor = current_corridor #each line knows its corridor
     while len(corridors) < current_corridor + 1:
-        corridors.append([])
-    corridors[current_corridor].append(line1)
+        corridors.append([]) #add an empty list if we don't know yet 
+    corridors[current_corridor].append(line1) #each corridor knows its line
     while len(reachable) > 0:
-        new_candidates = []
-        for line2 in reachable:
+        new_candidates = [] 
+        for line2 in reachable: 
             
-            if line2.visited==False:
+            if line2.visited == False:
                 #print "not yet visited l2", line2.name, "called from", line1.name
-                line2.visited=True
+                line2.visited = True
                 sumweight_line2 = 0.
-                new_reachable = []
+                new_reachable = [] #for 'RegionQuery' (TODO: write separate function)
                 for angle in traj_angles:
                     if abs(angle-line2.angle) > max_angle:
                         continue
@@ -244,9 +244,9 @@ def DBScan_bylist(x, ys, angles, weights, maxd, minw, max_angle):
 
 
 
+#main program, need to add main function
 
-
-
+#file IO: needs to be in function
 # Read file instantiate trajectories, add to dictionary of angles
 infile = sys.argv[1]
 max_dist = float(sys.argv[2])
@@ -254,26 +254,31 @@ min_density = float(sys.argv[3])
 max_angle = float(sys.argv[4])
 
 # For each line, get candidate lines from angle dictionary, find within distance
-traj_angles = defaultdict(list)
-trajectories = []
-fh = open (infile, 'r')
+traj_angles = defaultdict(list) #look up angles fast, each angle (in degrees) will have a list of Trajectory objects
+trajectories = [] # list of trajectories, keep it? 
+fh = open (infile, 'r') 
 for line in fh:
     linelist = line.split();
     traj = Trajectory(name=linelist[0], weight = float(linelist[1]), startx=float(linelist[2]), starty=float(linelist[3]), endx=float(linelist[4]), endy=float(linelist[5]))
     rounded_angle = round_to(traj.angle, 0.5);
-    traj_angles[rounded_angle].append(traj)
+    traj_angles[rounded_angle].append(traj) #add the trajectory to a list in the dictionary of angles
     trajectories.append(traj)
 
 
 
-current_corridor=0
+current_corridor = 0
 for line in trajectories:
-    current_corridor = DBScan(line, traj_angles,current_corridor)
-    print line.name, line.corridor
+    current_corridor = DBScan(line, traj_angles, current_corridor)
+    print line.name, line.corridor #print it to a file!
 
 
 
-
+# for each corridor, find the weighted average angle, rotate every
+# line by this angle to be approximately parallel to the x axis
+# for each x, find the y for each of the rotated lines and do a DB-Scan with 
+# this set of ys (some of them might be None if the rotated line does not
+# contain this x)
+# rotate the set of lines back and output the corridors
 for corridor in range(0, len(corridors)):
     w_sumangle = 0.
     sum_weight = 0
@@ -282,9 +287,9 @@ for corridor in range(0, len(corridors)):
     angles = []
     weights = []
     line_stack = []
-    minx_start = sys.float_info.max
-    maxx_rotated_end = sys.float_info.min
-    for line in corridors[corridor]:
+    minx_start = sys.float_info.max #first x we will consider
+    maxx_rotated_end = sys.float_info.min #last x we will consider
+    for line in corridors[corridor]: #weighted average of angles
         w_sumangle = w_sumangle + line.angle * line.weight
         sum_weight = sum_weight + line.weight
         angles.append(line.angle)
@@ -303,6 +308,8 @@ for corridor in range(0, len(corridors)):
             ys.append(line.getY_rotated(x))
         #print "ys", ys
         assignments = DBScan_bylist(x, ys, angles, weights, max_dist, min_density, max_angle)
+        #assigments is list of integers representing corridor assignment
+
         #print "Assigned!", assignments
         if assignments != last_assignments:
             yaves  = get_weighted_averages(ys, weights, assignments)
