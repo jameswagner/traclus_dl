@@ -12,6 +12,9 @@ class Trajectory:
         self.endx_rotated = endx
         self.endy_rotated = endy
 
+        self.startx_rotated = startx
+        self.starty_rotated = starty
+
         self.angle = arctan2(endy-starty, endx-startx) * 180 / math.pi
         self.rotated_angle = self.angle
         self.length = hypot(endy-starty, endx-startx)
@@ -44,11 +47,11 @@ class Trajectory:
 
         
     def getY_rotated(self, X):
-        if X < self.startx or X > self.endx_rotated:
+        if X < self.startx_rotated or X > self.endx_rotated:
             return None
         if self.rotated_slope == float('inf'):
             return self.starty
-        return (X-self.startx)*self.rotated_slope + self.starty
+        return (X-self.startx_rotated)*self.rotated_slope + self.starty_rotated
 
 
     def rotate(self,theta=0.):
@@ -62,23 +65,43 @@ class Trajectory:
         ydiff = self.endy - self.starty
 
 
-        newx = xdiff*cos(theta/180*math.pi) - ydiff*sin(theta/180.0*math.pi) + self.startx
-        newy = xdiff*sin(theta/180*math.pi) + ydiff*cos(theta/180.0*math.pi) + self.starty
-        self.endx_rotated = newx
-        self.endy_rotated = newy
+#        newx = xdiff*cos(theta/180*math.pi) - ydiff*sin(theta/180.0*math.pi) + self.startx
+#        newy = xdiff*sin(theta/180*math.pi) + ydiff*cos(theta/180.0*math.pi) + self.starty
+        newsx =  self.startx*cos(theta/180.*math.pi) + self.starty*sin(theta/180.0*math.pi)
+        newsy = -self.startx*sin(theta/180.*math.pi) + self.starty*cos(theta/180.0*math.pi)
+
+        newex =  self.endx*cos(theta/180.0*math.pi) + self.endy*sin(theta/180.0*math.pi)
+        newey =   -self.endx*sin(theta/180.0*math.pi) + self.endy*cos(theta/180.0*math.pi)
+
+    
+
+
+        self.endx_rotated = newex
+        self.endy_rotated = newey
+
+        self.startx_rotated = newsx
+        self.starty_rotated = newsy
         
-        self.rotated_angle = self.rotated_angle + theta
+        self.rotated_angle = self.rotated_angle - theta
         
-        if newx - self.startx == 0:
+        if newex - newsx == 0:
             self.rotated_slope = float('inf')
         else:
-            self.rotated_slope = (newy - self.starty) / (newx - self.startx)        
+            self.rotated_slope = (newey - newsy) / (newex - newsx)        
 
 
 
 
-#X = Trajectory(startx=1, starty=1, endx=2, endy=2)
-#X.rotate(-45)
-#print(X.endx_rotated, X.endy_rotated, X.angle, X.rotated_angle, X.rotated_slope, tan(X.rotated_angle*math.pi/180))
+#X = Trajectory(startx=100, starty=100, endx=200, endy=200)
+#X.rotate(+45)
+#print(X.endx_rotated, X.endy_rotated, "old angle", X.angle, "rotate angle", X.rotated_angle, "rotated slope", X.rotated_slope, "tan rotated angle", tan(X.rotated_angle*math.pi/180))
 
-        
+#print X.startx, X.starty, X.endx, X.endy, "to", X.startx_rotated, X.starty_rotated, X.endx_rotated, X.endy_rotated        
+
+
+
+X = Trajectory(startx=0, starty=0, endx=200, endy=200)
+X.rotate(45)
+print(X.endx_rotated, X.endy_rotated, "old angle", X.angle, "rotate angle", X.rotated_angle, "rotated slope", X.rotated_slope, "tan rotated angle", tan(X.rotated_angle*math.pi/180))
+
+print X.startx, X.starty, X.endx, X.endy, "to", X.startx_rotated, X.starty_rotated, X.endx_rotated, X.endy_rotated        

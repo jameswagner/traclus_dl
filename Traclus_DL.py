@@ -1,5 +1,6 @@
 from Trajectory import *
 import sys
+import matplotlib.pyplot as plt
 from collections import defaultdict
 from numpy import arange
 step_size = 1.0
@@ -13,12 +14,12 @@ def round_to(n, precision):
 
 
 
-def segments_distance(x11, y11, x12, y12, x21, y21, x22, y22):
+def segments_distance(x11, y11, x12, y12, x21, y21, x22, y22, name1="", name2=""):
   """ distance between two segments in the plane:
       one segment is (x11, y11) to (x12, y12)
       the other is   (x21, y21) to (x22, y22)
   """
-  if segments_intersect(x11, y11, x12, y12, x21, y21, y22, y22): return 0
+  if segments_intersect(x11, y11, x12, y12, x21, y21, x22, y22, name1, name2): return 1e-8
   # try each of the 4 vertices w/the other segment
   distances = []
   distances.append(point_segment_distance(x11, y11, x21, y21, x22, y22))
@@ -28,7 +29,7 @@ def segments_distance(x11, y11, x12, y12, x21, y21, x22, y22):
 
   return min(distances)
 
-def segments_intersect(x11, y11, x12, y12, x21, y21, x22, y22):
+def segments_intersect(x11, y11, x12, y12, x21, y21, x22, y22, name1, name2):
   """ whether two segments in the plane intersect:
       one segment is (x11, y11) to (x12, y12)
       the other is   (x21, y21) to (x22, y22)
@@ -38,9 +39,11 @@ def segments_intersect(x11, y11, x12, y12, x21, y21, x22, y22):
   dx2 = x22 - x21
   dy2 = y22 - y21
   delta = dx2 * dy1 - dy2 * dx1
+  
   if delta == 0: return False  # parallel segments
   s = (dx1 * (y21 - y11) + dy1 * (x11 - x21)) / delta
   t = (dx2 * (y11 - y21) + dy2 * (x21 - x11)) / (-delta)
+  
   return (0 <= s <= 1) and (0 <= t <= 1)
 
 import math
@@ -82,15 +85,19 @@ def DBScan(line1, traj_angles, current_corridor):
 
         for line2 in traj_angles[angle]:
             
-            if segments_distance(line1.startx, line1.starty, line1.endx, line1.endy, line2.startx, line2.starty, line2.endx, line2.endy) <= max_dist:
+            if segments_distance(line1.startx, line1.starty, line1.endx, line1.endy, line2.startx, line2.starty, line2.endx, line2.endy, line1.name, line2.name) <= max_dist:
                 reachable.append(line2)
                 sumweight = sumweight + line2.weight
-                
-    #print reachable, sumweight            
+#                if line1.name == "107399":
+                print line1.name, " checking with: ", line2.name, line2.weight, line2.angle, line2.startx, line2.starty, segments_distance(line1.startx, line1.starty, line1.endx, line1.endy, line2.startx, line2.starty, line2.endx, line2.endy, line1.name, line2.name) 
+    #print reachable, sumweight          
+ 
     if sumweight < min_density:
         line1.corridor = -1 #did not reach minimum density, assign line1 to noise cluster
         return current_corridor
     else:
+        if current_corridor == 11:
+            print line1.name, line1.startx, line1.starty, sumweight
         expand_cluster(line1, reachable, current_corridor)
         current_corridor = current_corridor + 1
         return current_corridor
@@ -105,7 +112,7 @@ def expand_cluster(line1, reachable, current_corridor):
         for line2 in reachable: 
             
             if line2.visited == False:
-                #print "not yet visited l2", line2.name, "called from", line1.name
+                print "not yet visited l2", line2.name, "called from", line1.name
                 line2.visited = True
                 sumweight_line2 = 0.
                 new_reachable = [] #for 'RegionQuery' (TODO: write separate function)
@@ -113,36 +120,48 @@ def expand_cluster(line1, reachable, current_corridor):
                     if abs(angle-line2.angle) > max_angle:
                         continue
                     for line3 in traj_angles[angle]:
-                        
-                        if segments_distance(line2.startx, line2.starty, line2.endx, line2.endy, line3.startx, line3.starty, line3.endx, line3.endy) <= max_dist:
+                        print "checking in expanded l3", line3.name, "dist ",  segments_distance(line2.startx, line2.starty, line2.endx, line2.endy, line3.startx, line3.starty, line3.endx, line3.endy, line2.name, line3.name)
+                        if segments_distance(line2.startx, line2.starty, line2.endx, line2.endy, line3.startx, line3.starty, line3.endx, line3.endy, line2.name, line3.name) <= max_dist:
+                            
                             sumweight_line2 = sumweight_line2 + line3.weight
-                            new_reachable.append(line)
+                            new_reachable.append(line3)
                 if sumweight_line2 >= min_density:
+                    print sumweight_line2, " from "
+                    for item in new_reachable:
+                        print item.name, item.weight, item.angle
                     for line3 in new_reachable:
                         if line3.visited == False:
                             new_candidates.append(line3)
             if line2.corridor < 0:
+                print line2.name, "expanded in", current_corridor
                 line2.corridor = current_corridor
                 corridors[current_corridor].append(line2)
         reachable = new_candidates
 
-def rotate_and_print_tuples(xy_tuples, theta):
-    if len(xy_tuples) < 2:
+def rotate_and_print_tuples(xy_tuples, theta, corridor):
+    if len(xy_tuples) < 1:
         print xy_tuples
         return
-    xstart = xy_tuples[0][0]
-    ystart = xy_tuples[0][1]
+    #xstart = xy_tuples[0][0]
+    #ystart = xy_tuples[0][1]
     string = str(xy_tuples[0])
-    
-    for index in range(1, len(xy_tuples)):
-        xend = xy_tuples[index][0]
-        yend = xy_tuples[index][1]
-        xdiff = xend - xstart
-        ydiff = yend - ystart
-        newx = xdiff*cos(theta/180*math.pi) - ydiff*sin(theta/180.0*math.pi) + xstart
-        newy = xdiff*sin(theta/180*math.pi) + ydiff*cos(theta/180.0*math.pi) + ystart
+    xs = []
+    ys = []
+    for index in range(0, len(xy_tuples)):
+        x = xy_tuples[index][0]
+        y = xy_tuples[index][1]
+        newx =  x*cos(theta/180.*math.pi) + y * sin(theta / 180.0*math.pi)
+        newy = -x*sin(theta/180.*math.pi) + y * cos(theta / 180.0*math.pi)
+
+        #xdiff = xend - xstart
+        #ydiff = yend - ystart
+        #newx = xdiff*cos(theta/180*math.pi) - ydiff*sin(theta/180.0*math.pi) + xstart
+        #newy = xdiff*sin(theta/180*math.pi) + ydiff*cos(theta/180.0*math.pi) + ystart
+        xs.append(newx)
+        ys.append(newy)
         string = string + str((newx, newy))
-    print string
+    plt.plot(xs, ys, color="black")
+    print corridor,  string
 
 
 def  map_best(ys, last_assignments, assignments):
@@ -175,6 +194,8 @@ def  map_best(ys, last_assignments, assignments):
 
 def get_weighted_averages(ys, weights, assignments):
     #print "get_weighted", ys, weights, assignments
+    if max(assignments) < 0:
+        return []
     ysums = [0.0] * (max(assignments)+1)
     ycounts = [0] * (max(assignments)+1)
     for index in range(0, len(ys), 1):
@@ -229,11 +250,13 @@ def DBScan_bylist(x, ys, angles, weights, maxd, minw, max_angle):
         reachable = []
         sumw = 0.
         for point_index2 in range(0, len(ys), 1):
+            if  ys[point_index2] == None:
+                continue
      #       print "comparing point to point", point_index, point_index2, ys[point_index], ys[point_index2];
             if abs(ys[point_index] - ys[point_index2]) < maxd and abs(angles[point_index] - angles[point_index2]) < max_angle:
                 sumw = sumw + weights[point_index2]
                 reachable.append(point_index2)
-        if sumw > minw:
+        if sumw >= minw:
             expand_dense_bylist(ys, angles, weights, maxd, minw, max_angle, point_index, visited, reachable, clus, assignments) 
             clus = clus + 1
         else :
@@ -264,12 +287,18 @@ for line in fh:
     traj_angles[rounded_angle].append(traj) #add the trajectory to a list in the dictionary of angles
     trajectories.append(traj)
 
-
-
+rainbow = ( "#4C00FF", "#3100FF", "#1500FF", "#0007FF", "#0023FF", "#003FFF", "#005AFF", "#0076FF", "#0092FF", "#00AEFF", "#00CAFF", "#00E5FF", "#00FF4D", "#00FF2B", "#00FF08", "#1AFF00", "#3CFF00", "#5DFF00", "#80FF00", "#A2FF00", "#C3FF00", "#E6FF00", "#FFFF00", "#FFF514", "#FFEC28", "#FFE53C", "#FFE04F", "#FFDC63", "#FFDB77", "#FFDB8B", "#FFDD9F", "#FFE0B3")
+plt.figure()
 current_corridor = 0
 for line in trajectories:
     current_corridor = DBScan(line, traj_angles, current_corridor)
-    print line.name, line.corridor #print it to a file!
+  
+    if line.corridor >= 0 :
+        plt.plot([line.startx, line.endx], [line.starty, line.endy], color=rainbow[line.corridor].lower())
+        print line.name, line.corridor, line.startx, line.starty, line.endx, line.endy, line.angle #print it to a file!
+        plt.text( x=line.startx, y=line.starty, s=str(line.corridor))
+#plt.savefig("duh")
+#plt.show()
 
 
 
@@ -294,13 +323,18 @@ for corridor in range(0, len(corridors)):
         sum_weight = sum_weight + line.weight
         angles.append(line.angle)
         weights.append(line.weight)
-        if minx_start > line.startx:
-            minx_start = line.startx
+        
     rot_angle = w_sumangle / sum_weight
     for line in corridors[corridor]:
-        line.rotate(-rot_angle)
+
+        line.rotate(rot_angle)
         if maxx_rotated_end <  line.endx_rotated:
             maxx_rotated_end = line.endx_rotated
+        if minx_start > line.startx_rotated:
+            minx_start = line.startx_rotated
+        print "rotation of", corridor,  "by", rot_angle, line.name, line.startx, line.starty, line.endx, line.endy, "to", line.startx_rotated, line.starty_rotated, line.endx_rotated, line.endy_rotated
+
+    
     for x in arange(minx_start, maxx_rotated_end, step_size ):
         #print "arange", x, minx_start, maxx_rotated_end, step_size
         ys = []
@@ -310,7 +344,7 @@ for corridor in range(0, len(corridors)):
         assignments = DBScan_bylist(x, ys, angles, weights, max_dist, min_density, max_angle)
         #assigments is list of integers representing corridor assignment
 
-        #print "Assigned!", assignments
+#        print corridor, "Assigned!", assignments, x, ys, angles, weights, max_dist, min_density, max_angle
         if assignments != last_assignments:
             yaves  = get_weighted_averages(ys, weights, assignments)
             if first:
@@ -320,12 +354,12 @@ for corridor in range(0, len(corridors)):
                     line_stack[idx].append((x, yaves[idx]))
             else:
                 best_mapped = map_best(ys, last_assignments, assignments)
-                
+  #              print "chaNGED!", last_assignments, assignments, best_mapped
                 temp_stack = []
                 new_assignment_mapped = {}
                 for old_sub_corr in best_mapped.keys:
                     if old_sub_corr not in best_mapped:
-                        rotate_and_print_tuples(line_stack[old_sub_corr], rot_angle)
+                        rotate_and_print_tuples(line_stack[old_sub_corr], -rot_angle, corridor)
                         continue
                     new_sub_corr = best_mapped[old_sub_corr]
                     temp_stack[new_sub_corr] = line_stack[old_sub_corr]
@@ -342,10 +376,12 @@ for corridor in range(0, len(corridors)):
             yaves  = get_weighted_averages(ys, weights, assignments)
             for idx, val in enumerate(yaves):
                 line_stack[idx].append((x, yaves[idx]))
-                rotate_and_print_tuples(line_stack[idx], rot_angle)
+                rotate_and_print_tuples(line_stack[idx], -rot_angle, corridor)
 
 
 
+
+plt.show()
 
 
 
