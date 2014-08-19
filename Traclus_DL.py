@@ -1,4 +1,4 @@
-from Trajectory import *
+ from Trajectory import *
 import sys
 #import matplotlib.pyplot as plt
 from collections import defaultdict
