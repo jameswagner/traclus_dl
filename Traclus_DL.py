@@ -1,11 +1,24 @@
- from Trajectory import *
+from Trajectory import *
+from ClusterQ import *
 import sys
-#import matplotlib.pyplot as plt
+import datetime
 from collections import defaultdict
 from numpy import arange
-step_size = 1.0
+from itertools import count
+import math
+"""This is a collection of methods to read in a set of 2 dimensional desire lines trajectories, and create segmented Trajectory data structures,
+run our adapted angle-based DBScan using each segment as a "seed", putting those that respect the minimum sum of weight (density)
+requirement in a priority queue. Clusters are then popped from the queue, the average X and Y of their starts and ends taken, and these output to a file
+for visualization in the QVis program. """
+
+
+#data structures to avoid having to recalculate distances between segments and lines
+segment_to_line_dist =  defaultdict(lambda : defaultdict(float))
+segment_to_line_closest_seg =  defaultdict(lambda : defaultdict(Trajectory.TrajectorySegment))
+
+
 def round_to(n, precision):
-    correction = 0.5 if n >= 0 else -0.5
+    correction = precision/2.0 if n >= 0 else -precision/2.0
     return int(n/precision+correction)*precision
 
 
@@ -13,390 +26,233 @@ def round_to(n, precision):
 
 
 
-
-def segments_distance(x11, y11, x12, y12, x21, y21, x22, y22, name1="", name2=""):
-  """ distance between two segments in the plane:
-      one segment is (x11, y11) to (x12, y12)
-      the other is   (x21, y21) to (x22, y22)
-  """
-  if segments_intersect(x11, y11, x12, y12, x21, y21, x22, y22, name1, name2): return 1e-8
-  # try each of the 4 vertices w/the other segment
-  distances = []
-  distances.append(point_segment_distance(x11, y11, x21, y21, x22, y22))
-  distances.append(point_segment_distance(x12, y12, x21, y21, x22, y22))
-  distances.append(point_segment_distance(x21, y21, x11, y11, x12, y12))
-  distances.append(point_segment_distance(x22, y22, x11, y11, x12, y12))
-
-  return min(distances)
-
-def segments_intersect(x11, y11, x12, y12, x21, y21, x22, y22, name1, name2):
-  """ whether two segments in the plane intersect:
-      one segment is (x11, y11) to (x12, y12)
-      the other is   (x21, y21) to (x22, y22)
-  """
-  dx1 = x12 - x11
-  dy1 = y12 - y11
-  dx2 = x22 - x21
-  dy2 = y22 - y21
-  delta = dx2 * dy1 - dy2 * dx1
-  
-  if delta == 0: return False  # parallel segments
-  s = (dx1 * (y21 - y11) + dy1 * (x11 - x21)) / delta
-  t = (dx2 * (y11 - y21) + dy2 * (x21 - x11)) / (-delta)
-  
-  return (0 <= s <= 1) and (0 <= t <= 1)
-
-import math
 def point_segment_distance(px, py, x1, y1, x2, y2):
-  dx = x2 - x1
-  dy = y2 - y1
-  if dx == dy == 0:  # the segment's just a point
-    return math.hypot(px - x1, py - y1)
+    """ returns the distance from a point in 2-D (px,py) to a line segment
+    going from (x1, y1) to (x12, y12), and also returns the x and y coordinates of the closest point in the line segment to (px,py)
+    
+    This function is adapted from a stackoverflow.com answer provided by user "Alex Martelli"
+    at http://stackoverflow.com/questions/2824478/shortest-distance-between-two-line-segments (last accessed November 6, 2014)
+    and is under the Creative Commons License http://creativecommons.org/licenses/by-sa/3.0/
+    """
+    #    print("called with ", px, py, x1, y1, x2, y2)
+    dx = x2 - x1
+    dy = y2 - y1
+    if dx == dy == 0:  # the segment's just a point
+        return math.hypot(px - x1, py - y1)
+    
+        # Calculate the t that minimizes the distance.
+    t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)
+    
+# See if this represents one of the segment's
+        # end points or a point in the middle.
+    near_x = 0
+    near_y = 0
+    
+    if t < 0:
+        dx = px - x1
+        dy = py - y1
+        near_x = x1
+        near_y = y1
+    elif t > 1:
+        dx = px - x2
+        dy = py - y2
+        near_x = x2
+        near_y = y2
+    else:
+        near_x = x1 + t * dx
+        near_y = y1 + t * dy
+        dx = px - near_x
+        dy = py - near_y
+    #if math.hypot(dx,dy) < 101:
+    #   print "came up with ", math.hypot(dx,dy), near_x, near_y
+    return (math.hypot(dx, dy), near_x, near_y)
+    
+    
 
-  # Calculate the t that minimizes the distance.
-  t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)
 
-  # See if this represents one of the segment's
-  # end points or a point in the middle.
-  if t < 0:
-    dx = px - x1
-    dy = py - y1
-  elif t > 1:
-    dx = px - x2
-    dy = py - y2
-  else:
-    near_x = x1 + t * dx
-    near_y = y1 + t * dy
-    dx = px - near_x
-    dy = py - near_y
 
-  return math.hypot(dx, dy)
-corridors = []
-def DBScan(line1, traj_angles, current_corridor):
-    if line1.visited == True or line1.corridor >= 0:
-        return current_corridor
-    reachable = []
-    line1.visited = True
-    sumweight = 0.0
+
+
+def reachable(seg1, seg_angle, traj_angles, max_dist, max_angle, segment_to_line_dist, segment_to_line_closest_seg):
+    """For a given segment and other parameters (the maximum angle, maximum distance), find all other segments reachable from that segment"""
+    reachable_segs = []
+    sumweight = 0.
     for angle in traj_angles:
-
-        if abs(angle - line1.angle) > max_angle:
+        #go through the dictionary of angles, only consider those that are less than max_angle from the seg_angle
+        if abs(angle - seg_angle) > max_angle:
             continue
+        
 
         for line2 in traj_angles[angle]:
-            
-            if segments_distance(line1.startx, line1.starty, line1.endx, line1.endy, line2.startx, line2.starty, line2.endx, line2.endy, line1.name, line2.name) <= max_dist:
-                reachable.append(line2)
+            #go through the lines for that angle, calculate distance of that line to that segment if not already done, and then check if less than max dist
+            if(line2.name not in segment_to_line_dist[seg1.id]): #segment_to_line_dist keeps track of distances already calculated, avoid more than once
+                segment_to_line_dist[seg1.id][line2.name], closest_x, closest_y =  point_segment_distance((seg1.startx+seg1.endx)/2, (seg1.starty+seg1.endy)/2, line2.startx, line2.starty, line2.endx, line2.endy)
+                if segment_to_line_dist[seg1.id][line2.name] > max_dist:
+                    segment_to_line_closest_seg[seg1.id][line2.name] = max_dist + 1;
+                else:
+                    segment_to_line_closest_seg[seg1.id][line2.name] = line2.get_segment_at(closest_x, closest_y)
+                    
+            if segment_to_line_dist[seg1.id][line2.name] <= max_dist:
+                #Respects both angle and distance limits! add to list of reachable segments and increment weight
+                reachable_segs.append(segment_to_line_closest_seg[seg1.id][line2.name])
                 sumweight = sumweight + line2.weight
-#                if line1.name == "107399":
 
-    #print reachable, sumweight          
- 
-    if sumweight < min_density:
-        line1.corridor = -1 #did not reach minimum density, assign line1 to noise cluster
-        return current_corridor
+    return sumweight, reachable_segs
+
+
+def DBScan(seg1, traj_angles,  max_dist, min_weight, max_angle, segment_to_line_dist, segment_to_line_closest_seg):
+    """implementation of DBScan with an angle twist. Find segments reachable from seg1 that respect both angle and distance criteria. Then expands cluster as done in 
+    classic DBScan, but angles are not allowed to expand, i.e. all final members of the cluster have an angle less than max_angle with the original seg1"""
+
+    reachable_segs = set() #keep track of those reachable from set1
+    sumweight, reachable_segs = reachable(seg1, seg1.parent.angle, traj_angles, max_dist, max_angle, segment_to_line_dist, segment_to_line_closest_seg); #add those reachable based on the maximum angle and maximum distance (epsilon)
+
+    if sumweight < min_weight:
+        return (-1, [])
     else:
-        expand_cluster(line1, reachable, current_corridor)
-        current_corridor = current_corridor + 1
-        return current_corridor
+        return expand_cluster(seg1, traj_angles, reachable_segs,  max_dist, min_weight, max_angle,  segment_to_line_dist, segment_to_line_closest_seg)
+        
 
-def expand_cluster(line1, reachable, current_corridor):
-    line1.corridor = current_corridor #each line knows its corrido
-    #print "expanding ", line1, line1.name, reachable
-    while len(corridors) < current_corridor + 1:
-        corridors.append([]) #add an empty list if we don't know yet 
-    corridors[current_corridor].append(line1) #each corridor knows its line
-    while len(reachable) > 0:
-        new_candidates = [] 
-        for line2 in reachable: 
+def expand_cluster(seg1, traj_angles, reachable_segs, max_dist, min_weight, max_angle, segment_to_line_dist, segment_to_line_closest_seg):
+    """ Expansion of cluster from seg1 as in classic DBScan but angles are not allowed to expand, i.e. all final members of the cluster have an angle less than max_angle with the original seg1"""
+    corridor_assignment = set()
+    represented_lines = set() # for a given line, only one representative segment per cluster/corridor
+    represented_lines.add(seg1.parent)
+    expanded_sum_weight = seg1.parent.weight
+    corridor_assignment.add(seg1) #this will definitely be in the corridor, and does not need to be expanded as we have found everything reachable from seg1
+    while len(reachable_segs) > 0:
+        new_candidates = []  #this is the list of segments that we continue to expand
+        for seg2 in reachable_segs: 
             
-            if line2.visited == False:
-
-                line2.visited = True
-                sumweight_line2 = 0.
-                new_reachable = [] #for 'RegionQuery' (TODO: write separate function)
-                for angle in traj_angles:
-                    if abs(angle-line2.angle) > max_angle:
-                        continue
-                    for line3 in traj_angles[angle]:
-                        
-                        if segments_distance(line2.startx, line2.starty, line2.endx, line2.endy, line3.startx, line3.starty, line3.endx, line3.endy, line2.name, line3.name) <= max_dist:
-                            
-                            sumweight_line2 = sumweight_line2 + line3.weight
-                            new_reachable.append(line3)
-                if sumweight_line2 >= min_density:
-                    
-                    
-                    for line3 in new_reachable:
-                        if line3.visited == False:
-                            new_candidates.append(line3)
-            if line2.corridor < 0:
+            if seg2 not in corridor_assignment and seg2.parent not in represented_lines:
+                represented_lines.add(seg2.parent)
+                corridor_assignment.add(seg2)
+                expanded_sum_weight += seg2.parent.weight
                 
-                line2.corridor = current_corridor
-                corridors[current_corridor].append(line2)
-        reachable = new_candidates
+                seg2_sum_weight, new_reachable = reachable(seg2, seg1.parent.angle, traj_angles, max_dist, max_angle, segment_to_line_dist, segment_to_line_closest_seg); #add those reachable based on the maximum angle and maximum distance (epsilon). Note that the second argument is not a typo as the angles are kept close to those of the original "seed" segment (seg1)
+                if seg2_sum_weight >= min_weight:
+                    for seg3 in new_reachable:
+                        if seg3 not in reachable_segs and seg3.parent not in represented_lines:
+                            new_candidates.append(seg3)
+  
+        reachable_segs = new_candidates 
 
-def rotate_and_print_tuples(xy_tuples, theta, corridor, fh):
-    if len(xy_tuples) < 1:
-        print xy_tuples
-        return
-    #xstart = xy_tuples[0][0]
-    #ystart = xy_tuples[0][1]
-    string = "LINESTRING("
-    xs = []
-    ys = []
-    for index in range(0, len(xy_tuples)):
-        x = xy_tuples[index][0]
-        y = xy_tuples[index][1]
-        newx =  x*cos(theta/180.*math.pi) + y * sin(theta / 180.0*math.pi)
-        newy = -x*sin(theta/180.*math.pi) + y * cos(theta / 180.0*math.pi)
-
-        #xdiff = xend - xstart
-        #ydiff = yend - ystart
-        #newx = xdiff*cos(theta/180*math.pi) - ydiff*sin(theta/180.0*math.pi) + xstart
-        #newy = xdiff*sin(theta/180*math.pi) + ydiff*cos(theta/180.0*math.pi) + ystart
-        xs.append(newx)
-        ys.append(newy)
-        string = string + str(newx) + "," + str(newy) + " "
-    #plt.plot(xs, ys, color="black")
-    string = string + ")"
-    fh.write(str(corridor) + "\t" +    string + "\n")
+    return (expanded_sum_weight, corridor_assignment)
 
 
-def  map_best(ys, last_assignments, assignments):
-    num_old_assign = max(last_assignments) + 1
-    num_new_assign = max(assignmnets) + 1
+
+        
+
+
+
+def print_weighted_averages(cluster_segments, corr_number, oh):
+    """File output method for printing weighted average of start and ends for the segments assigned to that cluster. File format is designed for visualization with QVis"""
+    weightsum = 0.
+    x1sum = 0.
+    y1sum = 0.
+    x2sum = 0.
+    y2sum = 0.
+    for segment in cluster_segments:
+        weightsum += segment.parent.weight
+        x1sum += segment.startx * segment.parent.weight
+        x2sum += segment.endx * segment.parent.weight
+        y1sum += segment.starty * segment.parent.weight
+        y2sum += segment.endy * segment.parent.weight
     
-    distances = [[0]*num_old_assign] * num_new_assign
-    y_olds = get_weighted_averages(ys, weights, last_assignments)
-    y_news = get_weighted_averages(ys, weights, assignments)
-    for index1 in range(0, num_new_assign, 1):
-        for index2 in range(0, num_old_assign, 1):
-            distances[index1][index2] = abs(y_olds[index2] - y_news[index1])
+
+
+    oh.write(str(corr_number) + "\t"+  str(weightsum) + "\tLINESTRING(" + str(x1sum/weightsum) + " "+ str(y1sum/weightsum) + ", " + str(x2sum/weightsum) + " " + str(y2sum/weightsum) + ")\n")
+
+
+def get_traj_by_name(trajectories, name):
+    """Search for particular trajectory name, used mostly for testing purposes"""
+    print trajectories
+    for traj in trajectories:
+        if traj.name == name:
+            return traj
+
+
+def read_file(infile, segment_size, traj_angles, trajectories):
+    """File input, one row per desire line with columns corresponding to line name, line weight, start x, start y, end x and end y, with comment lines (not to be included as desire lines
+    starting with #"""
+    fh = open (infile, 'r') 
+    for line in fh:
+        if line.startswith("#"):
+            continue
+        linelist = line.split();
+        traj = Trajectory(name=linelist[0], weight = float(linelist[1]), startx=float(linelist[2]), starty=float(linelist[3]), endx=float(linelist[4]), endy=float(linelist[5]))
+        traj.make_segments(segment_size)
+        rounded_angle = round_to(traj.angle, 0.5);
+        traj_angles[rounded_angle].append(traj) #add the trajectory to a list in the dictionary of angles
+        trajectories.append(traj)
+
+
+
+def build_DB_queue(trajectories, traj_angles, max_dist, min_density, max_angle, segment_to_line_dist, segment_to_line_closest_seg):
+    """Create empty ClusterQ, call DBScan with each segment in the set of all desire lines. Add those to the queue that respect minimum weight, return the ClusterQ of all
+    segments after DBScan run for all"""
+    Q = ClusterQ(min_density)
+    for line in trajectories:
+        for segment in line.segments:
+            sumweight, segments  = DBScan(segment, traj_angles, max_dist, min_density, max_angle, segment_to_line_dist, segment_to_line_closest_seg)
+            if sumweight >= min_density:
+                Q.add_cluster(segment, segments, int(sumweight*100))
+    return Q
+
+if __name__ == '__main__':
+
+    infile = sys.argv[1]
+    max_dist = float(sys.argv[2])
+    min_density = float(sys.argv[3])
+    max_angle = float(sys.argv[4])
+    segment_size = float(sys.argv[5])
     
-    mappings = {}
-    for counter in range(0, min(num_old_assign, num_new_assign)):
-        smallestd = 1e9
-        smallest_new = -1
-        smallest_old = -1
-        for index1 in range(0, num_new_assign, 1):
-            for index2 in range(0, num_old_assign, 1):
-                if distances[index1][index2] < smallestd:
-                    smallestd = distances[index1][index2]
-                    smallest_new = index1
-                    smallest_old = index2
-        mappings[smallest_old] = smallest_new
-        for index1 in range(0, num_new_assign):
-            distances[index1][smallest_old] = 1e10
-    return mappings
-
-
-def get_weighted_averages(ys, weights, assignments):
-    #print "get_weighted", ys, weights, assignments
-    if max(assignments) < 0:
-        return []
-    ysums = [0.0] * (max(assignments)+1)
-    ycounts = [0] * (max(assignments)+1)
-    for index in range(0, len(ys), 1):
-        if assignments[index] < 0:
-            continue
-        ysums[assignments[index]] = ysums[assignments[index]] +  ys[index] * weights[index]
-        ycounts[assignments[index]] = ycounts[assignments[index]] + weights[index]
-    for index in range(0, len(ysums), 1):
-        ysums[index] = ysums[index]  / ycounts[index]
-    return ysums
-
-
-def expand_dense_bylist(ys, angles, weights, maxd, minw, max_angle, point_index, visited, reachable, clus, assignments):
-    """ """
-    #print "visited", visited
-    #print "reachable", reachable
-    #print "ys", ys, "angles", angles
-    assignments[point_index] = clus
-    while len(reachable) > 0:
-        next_reachable = []        
-        for point_index2 in reachable:
-            candidate_reachable = []
-            sumw = 0.
-            if visited[point_index2] == False:
-                visited[point_index2] = True
-                for point_index3 in range(0, len(ys), 1):
-                    if ys[point_index3] == None:
-                        continue
-                    if abs(ys[point_index3] - ys[point_index2]) < maxd and abs(angles[point_index3] - angles[point_index2]) < max_angle:
-                        sumw = sumw + weights[point_index3]
-                        if not visited[point_index3]:
-                            candidate_reachable.append(point_index3)
-                if sumw >= minw:
-                    next_reachable.extend(candidate_reachable)
-            if assignments[point_index2] < 0:
-                assignments[point_index2] = clus
-        reachable = next_reachable
-
-def DBScan_bylist(x, ys, angles, weights, maxd, minw, max_angle):
-    """ Take as input a common x coordinate, and lists y coordinates, angles and weights of points to be clustered, values should be set to None for those that are not to be included
-    output is list of cluster ids, starting from 0, with -1 for not belonging to a cluster (either input was None or the point was not in region satisfying density requirement"""
-    #print "by_list", x, ys, angles, weights, maxd, minw, max_angle
-    clus = 0
-    visited = [False] * len(ys)
-    assignments = [-2] * len(ys)
-
-    for point_index in range(0, len(ys), 1):
-
-        if visited[point_index] or ys[point_index] == None:
-            continue
-        visited[point_index] = True
-        reachable = []
-        sumw = 0.
-        for point_index2 in range(0, len(ys), 1):
-            if  ys[point_index2] == None:
-                continue
-     #       print "comparing point to point", point_index, point_index2, ys[point_index], ys[point_index2];
-            if abs(ys[point_index] - ys[point_index2]) < maxd and abs(angles[point_index] - angles[point_index2]) < max_angle:
-                sumw = sumw + weights[point_index2]
-                reachable.append(point_index2)
-        if sumw >= minw:
-            expand_dense_bylist(ys, angles, weights, maxd, minw, max_angle, point_index, visited, reachable, clus, assignments) 
-            clus = clus + 1
-        else :
-            assignments[point_index] = -1
-    #print "sub clustering", x, assignments
-    return assignments
-
-
-
-
-#main program, need to add main function
-
-#file IO: needs to be in function
-# Read file instantiate trajectories, add to dictionary of angles
-infile = sys.argv[1]
-max_dist = float(sys.argv[2])
-min_density = float(sys.argv[3])
-max_angle = float(sys.argv[4])
-
+    
 # For each line, get candidate lines from angle dictionary, find within distance
-traj_angles = defaultdict(list) #look up angles fast, each angle (in degrees) will have a list of Trajectory objects
-trajectories = [] # list of trajectories, keep it? 
-fh = open (infile, 'r') 
-oh = open (infile + "." + str(max_dist) + "."  + str(min_density) + "." + str(max_angle) + ".linetocorr.txt", "w")
-oh.write("name\tweight\tcorridor\tcoordinates\n");
-for line in fh:
-    linelist = line.split();
-    traj = Trajectory(name=linelist[0], weight = float(linelist[1]), startx=float(linelist[2]), starty=float(linelist[3]), endx=float(linelist[4]), endy=float(linelist[5]))
-    rounded_angle = round_to(traj.angle, 0.5);
-    traj_angles[rounded_angle].append(traj) #add the trajectory to a list in the dictionary of angles
-    trajectories.append(traj)
+    traj_angles = defaultdict(list) #look up angles fast, each angle (in degrees) will have a list of Trajectory objects
+    trajectories = [] # list of trajectories, keep it? 
+    
+    read_file(infile, segment_size, traj_angles, trajectories)
+    
+    segment_list_oh = open(infile + "." + str(max_dist) + "." + str(min_density)  + "." + str(max_angle) + "." + str(segment_size) + ".segmentlist.txt", "w")
+    corridor_list_oh = open (infile + "." + str(max_dist) + "."  + str(min_density) + "." + str(max_angle) + "." + str(segment_size)  + ".corridorlist.txt", "w")
+    corridor_list_oh.write("name\tweight\tcoordinates\n");
+    segment_list_oh.write("line_id\tweight\tangle\tcorridor_id\tcoordinates\n");
 
     
-rainbow = ( "#4C00FF", "#3100FF", "#1500FF", "#0007FF", "#0023FF", "#003FFF", "#005AFF", "#0076FF", "#0092FF", "#00AEFF", "#00CAFF", "#00E5FF", "#00FF4D", "#00FF2B", "#00FF08", "#1AFF00", "#3CFF00", "#5DFF00", "#80FF00", "#A2FF00", "#C3FF00", "#E6FF00", "#FFFF00", "#FFF514", "#FFEC28", "#FFE53C", "#FFE04F", "#FFDC63", "#FFDB77", "#FFDB8B", "#FFDD9F", "#FFE0B3")
-#plt.figure()
-count=0
-current_corridor = 0
-for line in trajectories:
-    current_corridor = DBScan(line, traj_angles, current_corridor)
-    print line.name, "number", count
-    count = count+1
-    oh.write(line.name + "\t" + str(line.weight) + "\t" + str(line.corridor) + "\tLINESTRING(" + str(line.startx) + " " + str(line.starty) + ", " + str(line.endx) + " " + str(line.endy) + ")\n" ) 
-    #if line.corridor >= 0 :
-  #      plt.plot([line.startx, line.endx], [line.starty, line.endy], color=rainbow[line.corridor].lower())
-    #    print line.name, line.corridor, line.startx, line.starty, line.endx, line.endy, line.angle #print it to a file!
-   #     plt.text( x=line.startx, y=line.starty, s=str(line.corridor))
-#plt.savefig("duh")
-#plt.show()
+    build_DB_queue(trajectories, traj_angles, max_dist, min_density, max_angle, segment_to_line_dist, segment_to_line_closest_seg)
 
-oh.close()
-
-# for each corridor, find the weighted average angle, rotate every
-# line by this angle to be approximately parallel to the x axis
-# for each x, find the y for each of the rotated lines and do a DB-Scan with 
-# this set of ys (some of them might be None if the rotated line does not
-# contain this x)
-# rotate the set of lines back and output the corridors
-
-
-oh = open (infile + "." + str(max_dist) + "."  + str(min_density) + "." + str(max_angle) + ".corrtrack.txt", "w")
-oh.write("corridor\tcoordinates\n");
-
-for corridor in range(0, len(corridors)):
-    print "segment corridor", corridor, corridors[corridor]
-    w_sumangle = 0.
-    sum_weight = 0
-    first = True
-    last_assignments = []
-    angles = []
-    weights = []
-    subcorr_minweights = []
-    subcorr_maxweights = []
-    line_stack = []
-    minx_start = float('inf') #first x we will consider
-    maxx_rotated_end = -float('inf') #last x we will consider
-    for line in corridors[corridor]: #weighted average of angles
-        w_sumangle = w_sumangle + line.angle * line.weight
-        sum_weight = sum_weight + line.weight
-        angles.append(line.angle)
-        weights.append(line.weight)
         
-    rot_angle = w_sumangle / sum_weight
-    for line in corridors[corridor]:
 
-        line.rotate(rot_angle)
-        if maxx_rotated_end <  line.endx_rotated:
-            maxx_rotated_end = line.endx_rotated
-        if minx_start > line.startx_rotated:
-            minx_start = line.startx_rotated
+    
+
+    #To do, move segment file output to a separate function
+    corridor = 0
+    assigned = set()
+    while True:
+        try:
+            cluster_segments = pop_cluster()
+            print_weighted_averages(cluster_segments, corridor, corridor_list_oh)
 
 
-    print "range", minx_start, maxx_rotated_end
-    for x in arange(minx_start, maxx_rotated_end, step_size ):
-    #    print "arange", x, minx_start, maxx_rotated_end, step_size
-        ys = []
-        for line in corridors[corridor]:
-            ys.append(line.getY_rotated(x))
-        #print "ys", ys
-        assignments = DBScan_bylist(x, ys, angles, weights, max_dist, min_density, max_angle)
-        #assigments is list of integers representing corridor assignment
+            for segment in cluster_segments:
+                segment_list_oh.write(segment.parent.name + "\t" + str(segment.parent.weight) + "\t" + str(segment.parent.angle) + "\t"  + str(corridor) + "\tLINESTRING(" + str(segment.startx) + " " + str(segment.starty) + ", " + str(segment.endx) + " " + str(segment.endy) + ")\n")
+                assigned.add(str(segment))
+            corridor += 1
         
-#        print corridor, "Assigned!", assignments, x, ys, angles, weights, max_dist, min_density, max_angle
-        if assignments != last_assignments:
-            yaves  = get_weighted_averages(ys, weights, assignments)
-            if first:
-
-                for idx, val in enumerate(yaves):
-                    line_stack.append([])
-                    
-                    line_stack[idx].append((x, yaves[idx]))
-            else:
-                best_mapped = map_best(ys, last_assignments, assignments)
-  #              print "chaNGED!", last_assignments, assignments, best_mapped
-                temp_stack = []
-                new_assignment_mapped = {}
-                for old_sub_corr in best_mapped.keys:
-                    if old_sub_corr not in best_mapped:
-                        rotate_and_print_tuples(line_stack[old_sub_corr], -rot_angle, corridor, oh)
-                        continue
-                    new_sub_corr = best_mapped[old_sub_corr]
-                    temp_stack[new_sub_corr] = line_stack[old_sub_corr]
-                    temp_stack[new_sub_corr].append(x, yaves[new_sub_corr])
-                    new_assignment_mapped[new_sub_corr] = True
-                for new_sub_corr in range(0, max(assignments)+1):
-                    if not new_assignment_mapped[new_sub_corr]:
-                        temp_stack[new_sub_corr] = []
-                        temp_stack[new_sub_corr].append(x, yaves[new_sub_corr])
-                line_stack = temp_stack
-            last_assignments = assignments
-        elif x + step_size > maxx_rotated_end: #last one
-     
-            yaves  = get_weighted_averages(ys, weights, assignments)
-            for idx, val in enumerate(yaves):
-                line_stack[idx].append((x, yaves[idx]))
-                rotate_and_print_tuples(line_stack[idx], -rot_angle, corridor, oh)
+        except KeyError:
+            break
 
 
-
-oh.close()
-#plt.show()
+    for line in trajectories:
+        for segment in line.segments:
+            if str(segment) not in assigned:
+                segment_list_oh.write(segment.parent.name + "\t" + str(segment.parent.weight) + "\t" + str(segment.parent.angle) + "\t"  + str(-1) + "\tLINESTRING(" + str(segment.startx) + " " + str(segment.starty) + ", " + str(segment.endx) + " " + str(segment.endy) + ")\n")
 
 
 
 
+    
+    corridor_list_oh.close()
+
+    segment_list_oh.close()
