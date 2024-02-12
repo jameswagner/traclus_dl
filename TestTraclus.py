@@ -3,6 +3,7 @@ from collections import defaultdict
 from Trajectory import *
 from Traclus_DL import *
 from math import *
+
 class TestTraclus(unittest.TestCase):
 
     def setUp(self):
