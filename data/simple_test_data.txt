@@ -1,0 +1,17 @@
+# Four trajectories traveling roughly East (0 degrees)
+east1 10.0 0.0 0.0 100.0 0.0
+east2 10.0 0.0 1.0 100.0 1.0
+east3 10.0 0.0 2.0 100.0 2.0
+east4 10.0 0.0 3.0 100.0 3.0
+
+# Four trajectories traveling roughly North (90 degrees)
+north1 10.0 50.0 0.0 50.0 100.0
+north2 10.0 51.0 0.0 51.0 100.0
+north3 10.0 52.0 0.0 52.0 100.0
+north4 10.0 53.0 0.0 53.0 100.0
+
+# Four trajectories traveling roughly Northeast (45 degrees)
+ne1 10.0 150.0 0.0 200.0 50.0
+ne2 10.0 151.0 1.0 201.0 51.0
+ne3 10.0 152.0 2.0 202.0 52.0
+ne4 10.0 153.0 3.0 203.0 53.0 
